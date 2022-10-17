@@ -1,7 +1,7 @@
 # Code for ESP32 to manage VW 44.4v batteries
 
 
-Uses Vertiv / Emerson R48 Power Supply as the charger (included as submodule here; see below on cloning), SoyoSource GTN 1200 inverter via RS485, and interfaces with VW GTE battery packs via CAN bus. The ESP32 has one built-in CAN controller but this code uses MCP2515 transceivers to allow for multiple buses over shared SPI.
+Uses Vertiv / Emerson R48 Power Supply as the charger, SoyoSource GTN 1200 inverter via RS485, and interfaces with VW GTE battery packs via CAN bus. The ESP32 has one built-in CAN controller but this code uses MCP2515 transceivers to allow for multiple buses over shared SPI.
 
 The job of this system is to respond to incoming MQTT messages of instantaneous in/out grid power and try to keep it to zero, by either charging or discharging the batteries. Code for energy meter publishing over MQTT in separate repository, but simply put this will subscribe to a tinyMQTT broker and expects a message every 500ms or so.
 
@@ -36,16 +36,22 @@ You can see here one of my cells in the first 'module 3' is measuring incorrectl
   Balancing doesn't seem perfect. Not sure if it's software or hardware yet... but one of my module 3's balances out with 5 cells at 0.1v lower than the other 7. And the other module 3 has one cell measuring way below what it really is
   
 
-## Credits
+## Dependencies
+  You'll need to include these libraries...
 
-https://github.com/Tom-evnut/VW-bms
-
+  https://github.com/anikrooz/Emerson-Vertiv-R48
+  
 https://github.com/hsaturn/TinyMqtt
-
-https://github.com/syssi/esphome-soyosource-gtn-virtual-meter
-
-https://github.com/ChrisHomewood/MQTT_to_Soyosource-Inverter_RS485
 
 https://github.com/jandrassy/TelnetStream
 
 https://github.com/vshymanskyy/Preferences
+  
+## Credits
+  Inspired by...
+  
+https://github.com/Tom-evnut/VW-bms
+  
+https://github.com/syssi/esphome-soyosource-gtn-virtual-meter
+  
+https://github.com/ChrisHomewood/MQTT_to_Soyosource-Inverter_RS485
