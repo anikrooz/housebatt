@@ -1,18 +1,18 @@
 #include "CONFIG.h"
-//#include <ESP8266WiFi.h> //If using ESP8266, beware it hangs sometimes somewhere in BMSModule::decodecan. Likely just the flash not being quick enough. Adding IRAM_ATTR helped a bit. but not enough!
-//#include <ESP8266mDNS.h> //These watchdog timer reboots are tolerable if you're not using a charger that kicks out 250A whenever it stops receiving heartbeats over CAN
+//#include <ESP8266WiFi.h> //If using ESP8266, beware it hangs sometimes somewhere in BMSModule::decodecan. Likely just the flash memory not being quick enough to load instructions. Adding IRAM_ATTR helped a bit. but not enough!
+//#include <ESP8266mDNS.h> // ...These watchdog timer reboots are tolerable if you're not using a charger that kicks out 250A whenever it stops receiving heartbeats over CAN
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h> //https://www.arduino.cc/reference/en/libraries/arduinoota/
 #include <TelnetStream.h> //https://github.com/jandrassy/TelnetStream
 #include <mcp_can.h>
-#include "emerson-Vertiv-R48/VertivPsu.h"
 #include <TinyMqtt.h>   // https://github.com/hsaturn/TinyMqtt
 #include "BMSModuleManager.h"
-//#include <Filters.h> //https://github.com/JonHub/Filters
+//#include <Filters.h> //https://github.com/JonHub/Filters --- Commented out as it didn't seem worth it. ADS1115 is pretty stable
 #include <Adafruit_ADS1X15.h>
 #include <Preferences.h> //https://github.com/vshymanskyy/Preferences
+#include <VertivPSU.h>  //https://github.com/anikrooz/Emerson-Vertiv-R48
 
 Preferences prefs;
 
@@ -171,7 +171,8 @@ float getLowTemperature();
 
 /*
  * 
- *      MQTT Callback
+ *      MQTT Callback - Calculations and setting of charging / inverting happens here when MQTT messages received
+ *                    - works well when messages received every 500ms
  * 
  */
 
@@ -290,8 +291,9 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& topic, 
 
 
 /*
- * SETUP
- * 
+ *      SETUP ----- Get the system up and running
+ *              Once we get to the end of here, serial messages stop and we're onto TelnetClient for logs
+ *              Serial is then reconfigured for RS485... we could use a different UART of course
  */
 
 void setup() {
@@ -300,9 +302,6 @@ void setup() {
   Serial.println("alive");
 
   prefs.begin("goatshed");
-
-  //pinMode(CAN1_CS, OUTPUT); 
-  //digitalWrite(CAN1_CS, HIGH); //no cselect
   
   Serial.println("Wifi...");
   WiFi.mode(WIFI_STA);
@@ -376,7 +375,7 @@ void setup() {
 
 
 /*
- *    LOOP
+ *    LOOP    ---- Main code here. You'll find current measurement every 250ms, MQTT reporting and logging of stuff every 500ms
  * 
  */
 
