@@ -35,6 +35,7 @@ VertivPSU charger(CAN0_CS);
 //I have 2 BMS CAN buses due to duplicated module numbers. If you don't have duplicate modules, use just one and edit / "BMS aggregation functions" at the bottom
 
 #define CAN1_INT 0 //I'm not using interrupts so follow this through and edit the module to use it.
+#define CAN2_INT 0
 #define CAN1_CS 4    //ChipSelect for CAN1 MCP2515                    
 #define CAN2_CS 13   //ChipSelect for CAN2 MCP2515
 BMSModuleManager bms(CAN1_CS);
@@ -90,7 +91,7 @@ const float  ChargeTSetpoint = 0.0;
 const float  DisTSetpoint = 40.0;
 const float WarnToff = 5.0; //temp offset before raising warning
 const float IgnoreTemp = 0; // 0 - use both sensors, 1 or 2 only use that sensor
-const float IgnoreVolt = 3;//
+const float IgnoreVolt = 2.9;//
 const float balanceVoltage = 3.9;
 const float balanceHyst = 0.04;
 const float DeltaVolt = 0.5; //V of allowable difference between measurements
@@ -326,6 +327,7 @@ void setup() {
 
   Serial.println("Init can1");
   bms.initCan(CAN1_INT);
+  bms2.initCan(CAN2_INT);
   Serial.println("aftercan");
 
   //prefs.putInt("SOC", 86);
