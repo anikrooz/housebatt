@@ -24,3 +24,5 @@ https://github.com/syssi/esphome-soyosource-gtn-virtual-meter
 https://github.com/ChrisHomewood/MQTT_to_Soyosource-Inverter_RS485
 
 https://github.com/jandrassy/TelnetStream
+
+https://github.com/vshymanskyy/Preferences
