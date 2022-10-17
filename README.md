@@ -13,6 +13,12 @@ This has been designed for remote administration - it'll publish all sorts of da
   - MCP2515 x3 ("Mcp2515 CAN Bus Module TJA1050 Receiver SPI Module")
       I have 2 BMS CAN buses due to duplicated module numbers, ordinarily 2 would be enough, one for the Vertiv PSU at 125kbps, one for VW modules at 500kbps
   - Vertiv R48-3000e3 PSU 
+  - SoyoSource GTN-1200 48v (off AliExpress)
+  - VW Golf GTE battery packs (1.086kWh, in a 12S format)
+    - TE 1-1670990-1 connector each (you can use dupont jumpers easily)
+    - 5 x "5-965906-1 AUTOMOTIVE CONTACT, SOCKET" per connector
+    - M6 x 10mm bolts, two per battery
+    - 16mm^2 cable and SC16-8 lugs
   - 100A / 75mV DC shunt (mine came with "Digital DC Watt Meter 12v 24v 48v Voltage Current Battery Monitor Solar Power" off ebay)
   - ADS1115 16-Bit ADC Analog Digital 4 Channel 
   - Max485 transceiver ("MAX485 TTL to RS-485 Converter Module 3.3v")
@@ -26,6 +32,8 @@ Because I've published the charger manager as a separate repo, it's included as 
 I'll put the definitions for my homeassistant display up somewhere. Nice to watch the battery status
 ![Homeassistant example screen](readmepics/ha.png)
 
+## Known limitations
+  My SoyoSource inverter bottoms out at 43v so I'm only getting 40% of the battery's capacity
 
 ## Credits
 
