@@ -57,8 +57,8 @@ bool debug = 0; //turn off with d
 bool batStats = 1; // b
 bool pauseTelnet = 0;
 
-const char *mqtt_broker = "192.168.178.240";
-const char *topic = "meterbox/grid";
+const char *mqtt_broker = "192.168.178.240";  // put IP address of your MQTT broker here
+const char *topic = "meterbox/grid";          // and topic to subscribe to
 const int mqtt_port = 1883;
 static MqttClient client;
 
