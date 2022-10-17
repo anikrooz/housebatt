@@ -31,6 +31,9 @@ Because I've published the charger manager as a separate repo, it's included as 
 ## Visualising Info
 I'll put the definitions for my homeassistant display up somewhere. Nice to watch the battery status
 ![Homeassistant example screen](readmepics/ha.png)
+  
+You can see here one of my cells in the first 'module 3' is measuring incorrectly...
+![Telnet](readmepics/telnet.png)
 
 ## Known limitations
   My SoyoSource inverter bottoms out at 43v so I'm only getting 40% of the battery's capacity
