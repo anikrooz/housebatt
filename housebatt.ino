@@ -26,7 +26,6 @@ Adafruit_ADS1115 ads;
 #define STASSID "YourSSID"
 #define STAPSK  "YourPassword"
 #endif
-*/
 
 // ------  Hardware dependent stuff ....
 
