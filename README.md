@@ -15,12 +15,16 @@ This has been designed for remote administration - it'll publish all sorts of da
   - Vertiv R48-3000e3 PSU 
   - 100A / 75mV DC shunt (mine came with "Digital DC Watt Meter 12v 24v 48v Voltage Current Battery Monitor Solar Power" off ebay)
   - ADS1115 16-Bit ADC Analog Digital 4 Channel 
-  - 
+  - Max485 transceiver ("MAX485 TTL to RS-485 Converter Module 3.3v")
   
 ## Cloning
 
 Because I've published the charger manager as a separate repo, it's included as a submodule here. To clone this project locally, use:
 `git clone --recurse-submodules`
+  
+## Visualising Info
+I'll put the definitions for my homeassistant display up somewhere. Nice to watch the battery status
+![Homeassistant example screen](readmepics/ha.png)
 
 
 ## Credits
