@@ -7,12 +7,10 @@
 #include <ArduinoOTA.h> //https://www.arduino.cc/reference/en/libraries/arduinoota/
 #include <TelnetStream.h> //https://github.com/jandrassy/TelnetStream
 #include <mcp_can.h>
-//#include <SPI.h>
 #include "emerson-Vertiv-R48/VertivPsu.h"
 #include <TinyMqtt.h>   // https://github.com/hsaturn/TinyMqtt
 #include "BMSModuleManager.h"
 //#include <Filters.h> //https://github.com/JonHub/Filters
-//#include <Wire.h>
 #include <Adafruit_ADS1X15.h>
 #include <Preferences.h> //https://github.com/vshymanskyy/Preferences
 
@@ -20,7 +18,7 @@ Preferences prefs;
 
 Adafruit_ADS1115 ads;
 
-#include secrets.h  //with your SSID and password... 
+#include "secrets.h"  //with your SSID and password... 
                     //...OR comment that out and stick it here
 #ifndef STASSID
 #define STASSID "YourSSID"
@@ -908,7 +906,7 @@ void setupOTA(){
 }
 
 
-/* BMS aggregation functions - replace 'bms.doSomething'
+/* BMS aggregation functions - replaces 'bms.doSomething'
  *  
  */
 float getHighCellVolt(){
