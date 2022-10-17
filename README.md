@@ -36,7 +36,9 @@ You can see here one of my cells in the first 'module 3' is measuring incorrectl
 ![Telnet](readmepics/telnet.png)
 
 ## Known limitations
-  My SoyoSource inverter bottoms out at 43v so I'm only getting 40% of the battery's capacity
+  My SoyoSource inverter bottoms out at 43v so I'm only getting 40% of the battery's capacity. I have another 36v unit on the way that'll hopefully give us the rest, and up to 2kW where their working voltages overlap.
+  Balancing doesn't seem perfect. Not sure if it's software or hardware yet... but one of my module 3's balances out with 5 cells at 0.1v lower than the other 7. And the other module 3 has one cell measuring way below what it really is
+  
 
 ## Credits
 
