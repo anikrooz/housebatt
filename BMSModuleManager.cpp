@@ -44,7 +44,7 @@ bool BMSModuleManager::initCan(int INTr){
 
 void BMSModuleManager::checkCan(){
     
-   // if(!digitalRead(CAN1_INT)) { //
+   // if(!digitalRead(CAN1_INT)) { //to use interrupts, experimnent with this!
    while(CAN1->checkReceive() == 3) {
 
       

@@ -1,12 +1,11 @@
-//#include "Logger.h"
 #include "CONFIG.h"
-//#include <ESP8266WiFi.h>
+//#include <ESP8266WiFi.h> //If using ESP8266, beware it hangs sometimes somewhere in BMSModule::decodecan. Likely just the flash not being quick enough. Adding IRAM_ATTR helped a bit. but not enough!
+//#include <ESP8266mDNS.h> //These watchdog timer reboots are tolerable if you're not using a charger that kicks out 250A whenever it stops receiving heartbeats over CAN
 #include <WiFi.h>
-//#include <ESP8266mDNS.h>
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
-#include <ArduinoOTA.h>
-#include <TelnetStream.h>
+#include <ArduinoOTA.h> //https://www.arduino.cc/reference/en/libraries/arduinoota/
+#include <TelnetStream.h> //https://github.com/jandrassy/TelnetStream
 #include <mcp_can.h>
 //#include <SPI.h>
 #include "emerson-Vertiv-R48/VertivPsu.h"
@@ -15,25 +14,32 @@
 //#include <Filters.h> //https://github.com/JonHub/Filters
 //#include <Wire.h>
 #include <Adafruit_ADS1X15.h>
-#include <Preferences.h>
-
+#include <Preferences.h> //https://github.com/vshymanskyy/Preferences
 
 Preferences prefs;
 
 Adafruit_ADS1115 ads;
 
+#include secrets.h  //with your SSID and password... 
+                    //...OR comment that out and stick it here
 #ifndef STASSID
 #define STASSID "YourSSID"
-#define STAPSK  "wifiPassword"
+#define STAPSK  "YourPassword"
 #endif
+*/
 
-#define CAN0_INT 0
-#define CAN0_CS 5
+// ------  Hardware dependent stuff ....
+
+#define CAN0_CS 5 //ChipSelect for CAN0 MCP2515
+#define CAN0_INT 0 //I'm not using interrupts so follow this through and edit the module to use it.
+
 VertivPSU charger(CAN0_CS);
 
-#define CAN1_INT 0
-#define CAN1_CS 4                        
-#define CAN2_CS 13
+//I have 2 BMS CAN buses due to duplicated module numbers. If you don't have duplicate modules, use just one and edit / "BMS aggregation functions" at the bottom
+
+#define CAN1_INT 0 //I'm not using interrupts so follow this through and edit the module to use it.
+#define CAN1_CS 4    //ChipSelect for CAN1 MCP2515                    
+#define CAN2_CS 13   //ChipSelect for CAN2 MCP2515
 BMSModuleManager bms(CAN1_CS);
 BMSModuleManager bms2(CAN2_CS);
 
