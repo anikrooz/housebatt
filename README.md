@@ -5,7 +5,7 @@ Uses Vertiv / Emerson R48 Power Supply as the charger, SoyoSource GTN 1200 inver
 
 The job of this system is to respond to incoming MQTT messages of instantaneous in/out grid power and try to keep it to zero, by either charging or discharging the batteries. Code for energy meter publishing over MQTT in separate repository, but simply put this will subscribe to a tinyMQTT broker and expects a message every 500ms or so.
 
-This has been designed for remote administration - it'll publish all sorts of data via MQTT so you can keep an eye on it and display nicely on homeassistant, and it uses the TelnetStream library to allow for remote commands and more detailed log following. Telnet is really simple - if you have the Windows feature turned on for example, just type "telnet <ip address>" in a command prompt and you'll get current status and a the keys to toggle debug modes, etc.
+This has been designed for remote administration - it'll publish all sorts of data via MQTT so you can keep an eye on it and display nicely on homeassistant, and it uses the TelnetStream library to allow for remote commands and more detailed log following. Telnet is really simple - if you have the Windows feature turned on for example, just type "telnet (ip address)" in a command prompt and you'll get current status and a the keys to toggle debug modes, etc.
 
 ## Hardware 
   My set-up:
@@ -33,7 +33,8 @@ You can see here one of my cells in the first 'module 3' is measuring incorrectl
 
 ## Known limitations
   My SoyoSource inverter bottoms out at 43v so I'm only getting 40% of the battery's capacity. I have another 36v unit on the way that'll hopefully give us the rest, and up to 2kW where their working voltages overlap.
-  Balancing doesn't seem perfect. Not sure if it's software or hardware yet... but one of my module 3's balances out with 5 cells at 0.1v lower than the other 7. And the other module 3 has one cell measuring way below what it really is
+
+  Balancing doesn't seem perfect. Not sure if it's software or hardware yet... but one of my module 3's balances out with 5 cells at 0.1v lower than the other 7. And the other module 3 has one cell measuring way below what it really is.
   
 
 ## Dependencies
