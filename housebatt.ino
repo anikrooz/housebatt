@@ -12,7 +12,7 @@
 //#include <Filters.h> //https://github.com/JonHub/Filters --- Commented out as it didn't seem worth it. ADS1115 is pretty stable
 #include <Adafruit_ADS1X15.h>
 #include <Preferences.h> //https://github.com/vshymanskyy/Preferences
-#include <VertivPSU.h>  //https://github.com/anikrooz/Emerson-Vertiv-R48
+#include <VertivPsu.h>  //https://github.com/anikrooz/Emerson-Vertiv-R48
 
 Preferences prefs;
 
@@ -44,77 +44,95 @@ BMSModuleManager bms2(CAN2_CS);
 #define ADS_SCL 22
 #define ADS_SDA 21
 
-#define RS485_TRA 2 //DriverEnable, go HI to send
+#define RS485_TRA 2 //DriverEnable, goes HI to send. I use pin 2 on ESP32 so the blue light flashes for each MQTT callback
 
-const char* ssid = STASSID;
-const char* password = STAPSK;
 
-bool chCANdebug = 0; //turn on with D
-bool batCANdebug = 0; //turn on with B
-bool debug = 0; //turn off with d
-bool batStats = 1; // b
-bool pauseTelnet = 0;
+// --- Configurable settings
 
 const char *mqtt_broker = "192.168.178.240";  // put IP address of your MQTT broker here
 const char *topic = "meterbox/grid";          // and topic to subscribe to
+const char *targetTopic = "meterbox/target";  // target % to charge to 
 const int mqtt_port = 1883;
-static MqttClient client;
 
-//Curent filter//
-float filterFrequency = 5.0 ;
-//FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
+const int chainedInverters = 2; // < --  most likely start with 1 here
 const int maxOutput = 1000; //edit this to limit TOTAL power output in watts (not individual unit output)
 const int importbuffer = 20;
 const int maxChargerpower = -2800; //max charging power, limited by temp, cell imbalance, etc
 const int minChargerpower = -150; //stop charging less than this
 const int startChargerPower = -300; //don't turn on charger less than this
 const int minOutput = 50; //no inverter less than this
-const int chargerIdleACoff = 600000; //10 mins
+const int chargerIdleACoff = 600000; //10 mins //Not used
 
-int importingnow = 0; //amount of electricity being imported from grid
-int demand = 0; //current power inverter should deliver (default to zero)
+const int chargecurrentmax = 500; //max charge current in 0.1A
+const int chargecurrentend = 50; //end charge current in 0.1A
+const int chargecurrentcold = 50;
+int timeout = 15000;
+int chargerRamptime = 8500; //don't alter demand for this time, let charger ramp up
 
+// Configure these for your battery size
+const int Pstrings = 9; //// TOTAL strings in parallel used to divide voltage of pack
+const int Scells = 12;//Cells in series
+const int bms1Pstrings = 3; //cells in parallel on this CAN bus
+const int bms2Pstrings = 6;
 
+const int CAP = 22.5; //25; //battery size in Ah
 
+//Standard li-ion points - probably ok for most use cases
 
-//settings
 const float OverVSetpoint = 4.2;
-const float  UnderVSetpoint = 2.8;
+const float  UnderVSetpoint = 3.0; //up from 2.8
 const float ChargeVsetpoint = 4.1;
-// batt start for inverter 47v; shutdown 43v. Nominal is 44.4!
 const float ChargeHys = 0.1; // voltage drop required for charger to kick back on
-const float    CellGap = 0.2; //max delta between high and low cell
+const float  CellGap = 0.2; //max delta between high and low cell
 const float  OverTSetpoint = 65.0;
 const float  UnderTSetpoint = -10.0;
 const float  ChargeTSetpoint = 0.0;
 const float  DisTSetpoint = 40.0;
 const float WarnToff = 5.0; //temp offset before raising warning
 const float IgnoreTemp = 0; // 0 - use both sensors, 1 or 2 only use that sensor
-const float IgnoreVolt = 2.9;//
+const float IgnoreVolt = 2.8;//
 const float balanceVoltage = 3.9;
 const float balanceHyst = 0.04;
 const float DeltaVolt = 0.5; //V of allowable difference between measurements
-const int CAP = 22.5; //25; //battery size in Ah
+
 int socvolt[4] = {3100, 10, 4100, 90}; 
 /*socvolt[0] = 3100; //Voltage and SOC curve for voltage based SOC calc
 socvolt[1] = 10; //Voltage and SOC curve for voltage based SOC calc
 socvolt[2] = 4100; //Voltage and SOC curve for voltage based SOC calc
 socvolt[3] = 90; //Voltage and SOC curve for voltage based SOC calc*/
-const int Pstrings = 9; //// TOTAL strings in parallel used to divide voltage of pack
-const int Scells = 12;//Cells in series
-const int bms1Pstrings = 3; //cells in parallel on this CAN bus
-const int bms2Pstrings = 6;
-
 const float StoreVsetpoint = 3.8; // V storage mode charge max
 const int discurrentmax = 300; // max discharge current in 0.1A
 const float DisTaper = 0.3; //V offset to bring in discharge taper to Zero Amps at settings.DischVsetpoint
 const float DischVsetpoint = 3.2;
-const int chargecurrentmax = 500; //max charge current in 0.1A
-const int chargecurrentend = 50; //end charge current in 0.1A
-const int chargecurrentcold = 50;
+
 int maxedDiscurrent = discurrentmax;
 int maxedChargecurrent = chargecurrentmax;
+
+
+
+
+// ----- End configurable settings
+
+static MqttClient client;
+
+int importingnow = 0; //amount of electricity being imported from grid
+int demand = 0; //current power inverter should deliver (default to zero)
+
+
+const char* ssid = STASSID;
+const char* password = STAPSK;
+bool chCANdebug = 0; //turn on with D
+bool batCANdebug = 0; //turn on with B
+bool debug = 0; //turn off with d
+bool batStats = 1; // b
+bool pauseTelnet = 0;
+
+
+//Curent filter - not used//
+float filterFrequency = 5.0 ;
+//FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
+
 //Variables for SOC calc
 int SOC = 100; //State of Charge
 int SOCset = 0;
@@ -126,9 +144,8 @@ String error;
 bool canCharge = 0;
 bool canInvert = 0;
 unsigned long lastMQTT = 0;
-int timeout = 15000;
+
 unsigned long chargerRampup = 0;
-int chargerRamptime = 8500; //don't alter demand for this time, let charger ramp up
 long unsigned int cleartime = 0;
 long unsigned int lastChargeTime = 0;
 
@@ -221,8 +238,8 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& topic, 
         //charger.setCPerc(0);
       }else{
         demand -= importbuffer;
-        serialpacket[4] =  demand >> 8;
-        serialpacket[5] = demand >> 0;
+        serialpacket[4] =  (demand / chainedInverters) >> 8;
+        serialpacket[5] = (demand / chainedInverters) >> 0;
         serialpacket[7] = 264 - serialpacket[4] - serialpacket[5];
         demand += importbuffer;
         Serial.write(serialpacket,8);
@@ -391,7 +408,7 @@ void loop() {
   yield();
   bms2.checkCan();
   
-  canInvert = bms.getPackVoltage() > 36 && getHighCellVolt() > UnderVSetpoint && invertOverride; //inverter stops at 43 anyway :(
+  canInvert = bms.getPackVoltage() > 36 && getLowCellVolt() > UnderVSetpoint && invertOverride; //this is a hard limit at UnderVSetpoint. currentlimit() should taper to zero at dischVsetpoint
 
   if(charging && getHighCellVolt() > ChargeVsetpoint) {
     TelnetStream.println("                  ----------- STOP CHARGING, fully charged ------------");
@@ -490,13 +507,13 @@ void loop() {
               bms2.getAvgCellVolt(); //needed to set scells
              
 
-              //check we have all cells!!
+              //check we have all cells!!                                         
               if (cellspresent == 0 && bms.seriescells() == (Scells * bms1Pstrings) && bms2.seriescells() == (Scells * bms2Pstrings))
               {
                 bms.setSensors(IgnoreTemp, IgnoreVolt, DeltaVolt);
                 bms2.setSensors(IgnoreTemp, IgnoreVolt, DeltaVolt);
           
-                cellspresent = bms.seriescells() + bms2.seriescells();
+                cellspresent = bms.seriescells() + bms2.seriescells() - 1; //!! this is my dodgy cell
                 if (client.connected()) client.publish("goatshed/status", "cellspresent SET " + cellspresent);
                 
                 error = "";
