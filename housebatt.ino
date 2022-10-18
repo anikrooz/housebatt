@@ -50,8 +50,8 @@ BMSModuleManager bms2(CAN2_CS);
 // --- Configurable settings
 
 const char *mqtt_broker = "192.168.178.240";  // put IP address of your MQTT broker here
-const char *topic = "meterbox/grid";          // and topic to subscribe to
-const char *targetTopic = "meterbox/target";  // target % to charge to 
+const char *importTopic = "meterbox/grid";          // and topic to subscribe to
+const char *targetTopic = "meterbox/chargeTarget";  // target power (W) to charge at, ignoring grid input
 const int mqtt_port = 1883;
 
 
@@ -127,6 +127,7 @@ bool batCANdebug = 0; //turn on with B
 bool debug = 0; //turn off with d
 bool batStats = 1; // b
 bool pauseTelnet = 0;
+bool targetMode = 0; //set when non-zero targetTopic received. Times out
 
 
 //Curent filter - not used//
@@ -195,24 +196,41 @@ float getLowTemperature();
 
 
 
-void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& topic, const char* payload, size_t /* length */)
+void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopic, const char* payload, size_t /* length */)
 { 
   if(!debug && !chCANdebug && !batCANdebug) cls();
-  if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream << "-->                                  Grid flow: " << topic.c_str() << ", " << payload << endl;
-  lastMQTT = millis();
-  
+      
   if(!SOCset) return; //let it settle
   if(chargerRampup > millis()) return charger.setCAmps(cAmps);
   
+  const char *topic = inpTopic.c_str();
+   
+  if((String)topic == (String)importTopic && !targetMode){
+      lastMQTT = millis();
+      importingnow = String(payload).toInt();
+        
+        // -- Compute demand signal --    
+        //importingnow = importingnow-importbuffer; //target grid demand minus buffer
+      //demand = bVolts * bmAmps/1000 * (bmAmps < 0 ? 1.04 : 0.9); //actual currently going to (-) / from (+) battery (+ 5% for mains)
+      if(bmAmps == 0) demand = 0; //don't care what we asked it last time; we got nothing!
+      if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                             Batt right now: " + (String)demand);
+      demand = demand + importingnow; //add grid import to current demand, expects that grid import will be negative if exporting
+
+  }else if((String)topic == (String)targetTopic){
+      if(String(payload).toInt() > 0){
+          TelnetStream.println("                  ----------- TARGET MODE ----------");
+          lastMQTT = millis();
+          targetMode = 1;
+          demand = 0 - String(payload).toInt();
+      }else{
+          targetMode = 0;
+      }
+      
+  }else{
+    TelnetStream.println(" -- Topic received; nothing to do : " + (String)topic);
+    return;
+  }
   
-  importingnow = String(payload).toInt();
-    
-    // -- Compute demand signal --    
-    //importingnow = importingnow-importbuffer; //target grid demand minus buffer
-  //demand = bVolts * bmAmps/1000 * (bmAmps < 0 ? 1.04 : 0.9); //actual currently going to (-) / from (+) battery (+ 5% for mains)
-  if(bmAmps == 0) demand = 0; //don't care what we asked it last time; we got nothing!
-  if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                             Batt right now: " + (String)demand);
-  demand = demand + importingnow; //add grid import to current demand, expects that grid import will be negative if exporting
   if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                                     Demand: " + (String)demand);
   
     //limit demand between maxs
@@ -238,6 +256,7 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& topic, 
         //charger.setCPerc(0);
       }else{
         demand -= importbuffer;
+        if(maxedDiscurrent * bVolts < demand) demand = maxedDiscurrent * bVolts;
         serialpacket[4] =  (demand / chainedInverters) >> 8;
         serialpacket[5] = (demand / chainedInverters) >> 0;
         serialpacket[7] = 264 - serialpacket[4] - serialpacket[5];
@@ -358,7 +377,8 @@ void setup() {
 
   client.connect(mqtt_broker, mqtt_port);  // Put here your broker ip / port
   client.setCallback(mqttCallback);
-  client.subscribe(topic);
+  client.subscribe(importTopic);
+  client.subscribe(targetTopic);
 
 
   Serial.println("aftermqtt");
@@ -591,6 +611,7 @@ void loop() {
     charging = 0;
     charger.setCAmps(1);
     //inverter will die itself
+    targetMode = 0;
   }
 
 
