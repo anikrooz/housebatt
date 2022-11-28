@@ -91,7 +91,7 @@ void IRAM_ATTR BMSModule::decodetemp(uint8_t rx[8], int y)
   }
 }
 
-void IRAM_ATTR BMSModule::decodecan(int Id, uint8_t rx[8])
+void IRAM_ATTR BMSModule::decodecan(int Id, uint8_t rx[8], int Mod)
 {
   switch (Id)
   {
@@ -119,6 +119,9 @@ void IRAM_ATTR BMSModule::decodecan(int Id, uint8_t rx[8])
       cellVolt[10] = (uint16_t(rx[5] << 4) + uint16_t(rx[4] >> 4) + 1000) * 0.001;
       cellVolt[9] = (rx[3] + uint16_t((rx[4] & 0x0F) << 8) + 1000) * 0.001;
       cellVolt[11] = (rx[6] + uint16_t((rx[7] & 0x0F) << 8) + 1000) * 0.001;
+      //for my one dodgy mod3 cell 11...
+      if(Mod == 3 && cellVolt[10] - cellVolt[11] > 0.3) cellVolt[11] = cellVolt[10];
+      
 
       break;
 

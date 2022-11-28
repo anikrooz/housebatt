@@ -6,7 +6,7 @@ class BMSModule
 {
   public:
     BMSModule();
-    void decodecan(int Id, uint8_t rx[8]);
+    void decodecan(int Id, uint8_t rx[8], int Mod);
     void decodetemp(uint8_t rx[8], int type);
     void clearmodule();
     int getscells();

@@ -56,7 +56,7 @@ const int mqtt_port = 1883;
 
 
 const int chainedInverters = 2; // < --  most likely start with 1 here
-const int maxOutput = 1000; //edit this to limit TOTAL power output in watts (not individual unit output)
+const int maxOutput = 1000 * chainedInverters; //edit this to limit TOTAL power output in watts (not individual unit output)
 const int importbuffer = 20;
 const int maxChargerpower = -2800; //max charging power, limited by temp, cell imbalance, etc
 const int minChargerpower = -150; //stop charging less than this
@@ -81,7 +81,7 @@ const int CAP = 22.5; //25; //battery size in Ah
 //Standard li-ion points - probably ok for most use cases
 
 const float OverVSetpoint = 4.2;
-const float  UnderVSetpoint = 3.0; //up from 2.8
+const float  UnderVSetpoint = 2.8; //really doesn't do much. See DischVsetpoint
 const float ChargeVsetpoint = 4.1;
 const float ChargeHys = 0.1; // voltage drop required for charger to kick back on
 const float  CellGap = 0.2; //max delta between high and low cell
@@ -91,7 +91,7 @@ const float  ChargeTSetpoint = 0.0;
 const float  DisTSetpoint = 40.0;
 const float WarnToff = 5.0; //temp offset before raising warning
 const float IgnoreTemp = 0; // 0 - use both sensors, 1 or 2 only use that sensor
-const float IgnoreVolt = 2.8;//
+const float IgnoreVolt = 0.5; //cells below this are IGNORED
 const float balanceVoltage = 3.9;
 const float balanceHyst = 0.04;
 const float DeltaVolt = 0.5; //V of allowable difference between measurements
@@ -101,13 +101,9 @@ int socvolt[4] = {3100, 10, 4100, 90};
 socvolt[1] = 10; //Voltage and SOC curve for voltage based SOC calc
 socvolt[2] = 4100; //Voltage and SOC curve for voltage based SOC calc
 socvolt[3] = 90; //Voltage and SOC curve for voltage based SOC calc*/
-const float StoreVsetpoint = 3.8; // V storage mode charge max
 const int discurrentmax = 300; // max discharge current in 0.1A
 const float DisTaper = 0.3; //V offset to bring in discharge taper to Zero Amps at settings.DischVsetpoint
-const float DischVsetpoint = 3.2;
-
-int maxedDiscurrent = discurrentmax;
-int maxedChargecurrent = chargecurrentmax;
+const float DischVsetpoint = 3.1; //no discharge under this
 
 
 
@@ -118,7 +114,8 @@ static MqttClient client;
 
 int importingnow = 0; //amount of electricity being imported from grid
 int demand = 0; //current power inverter should deliver (default to zero)
-
+int maxedDiscurrent = discurrentmax;
+int maxedChargecurrent = chargecurrentmax;
 
 const char* ssid = STASSID;
 const char* password = STAPSK;
@@ -270,29 +267,37 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopi
 
 
   }else if(demand < minChargerpower && canCharge){ 
-        inverting = 0;
-        cAmps = ((0-demand)-importbuffer)/charger.voutput;
-        if(cAmps > maxedChargecurrent*0.1) cAmps = maxedChargecurrent*0.1;
-        if(!charging && demand < startChargerPower) {
-          lastChargeTime = millis();
-          TelnetStream.println("                  ----------- START CHARGING ------------");
-          TelnetStream.println();
-          if (client.connected()) client.publish("goatshed/status", "START CHARGING");
-          //start charging... set initial to actual demand!
-          //demand = importingnow;
-          chargerRampup = millis() + chargerRamptime;
-          //charger.setCPerc(100);
-          charger.setCAmps(cAmps*0.8);
-          charger.switchACpower(1);
-          charging = 1;
-          //cAmps = 1; //slow for first 5 s
-        }else if(charging){
-          lastChargeTime = millis();
-          charger.setCAmps(cAmps);
-          if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("---------                       Set Charge Amps: " + (String)cAmps);
-          //if(bmAmps > 2000) flipCurrent = !flipCurrent;
+        if(inverting) {             //sublime straight from inverting to charging
+          TelnetStream.println("                  ----------- STOP INVERTING ------------");
+          chargerRampup = millis() + 1000; //give it a second to get accurate non-inverting demand
+          inverting = 0;
+          demand = 0;
         }else{
-          demand = 0; 
+          cAmps = ((0-demand)-importbuffer)/charger.voutput;
+          if(cAmps > maxedChargecurrent*0.1) cAmps = maxedChargecurrent*0.1;
+          inverting = 0;
+          if(!charging && demand < startChargerPower) {
+            lastChargeTime = millis();
+            TelnetStream.println("                  ----------- START CHARGING ------------");
+            TelnetStream.println();
+            if (client.connected()) client.publish("goatshed/status", "START CHARGING");
+            //start charging... set initial to actual demand!
+            //demand = importingnow;
+            chargerRampup = millis() + chargerRamptime;
+            //charger.setCPerc(100);
+            charger.setCAmps(cAmps*0.8);
+            charger.switchACpower(1);
+            charging = 1;
+            //cAmps = 1; //slow for first 5 s
+          }else if(charging){
+            lastChargeTime = millis();
+            charger.setCAmps(cAmps);
+            if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("---------                       Set Charge Amps: " + (String)cAmps);
+            //if(bmAmps > 2000) flipCurrent = !flipCurrent;
+          }else{
+            TelnetStream.println("Not charging - demand under startChargerPower");
+            demand = 0; 
+          }
         }
   }else{
     //demand small, so ignored (or not allowed to charge)
@@ -449,7 +454,7 @@ void loop() {
   canCharge = chargeOverride && !fullyCharged && charger.isConnected();
 
 
-  // ---- Current measurement -----
+  // ---- Current measurement ev 250ms -----
   static unsigned long next_measure = millis()+4000;
   if(!twiOk) twiOk = ads.begin();
   if(twiOk && millis() > next_measure){
@@ -459,10 +464,9 @@ void loop() {
     //if(millis() > 1500 && millis() < 5000 && bmAmps > 1000) flipCurrent = 1; // no other way we can be using in that time
     
     bmAmps = results * (flipCurrent ? 1 : -1); //((float)results * 256.0) / 32768 * 1.3333;//75mv->100A shunt
-    if(bmAmps < 35 && bmAmps > 0) bmAmps = 0; //filter out zero jitter
-    if(bmAmps > -35 && bmAmps < 0) bmAmps = 0;
+    if(bmAmps < 35 && bmAmps > -35) bmAmps = 0; //filter out zero jitter
     
-    if((charger.ioutput > 0 && bmAmps > 0) || (charger.ioutput == 0 && inverting && bmAmps < 0)){
+    if((charging && bmAmps > 0) || (!charging && inverting && bmAmps < 0)){
       flipCurrent = !flipCurrent;
       bmAmps = bmAmps * -1;
     }
@@ -506,8 +510,8 @@ void loop() {
     if(SOCset && getHighCellVolt() > balanceVoltage && getHighCellVolt() > getLowCellVolt() + balanceHyst) {
         if(!pauseTelnet) TelnetStream.println("Balancing");
         balancing = 1;
-        bms.balanceCells(0);    //1 is debug
-        bms2.balanceCells(0);
+        //bms.balanceCells(0);    //1 is debug
+        //bms2.balanceCells(0);
     }else{
         balancing = 0;
     }
@@ -533,7 +537,7 @@ void loop() {
                 bms.setSensors(IgnoreTemp, IgnoreVolt, DeltaVolt);
                 bms2.setSensors(IgnoreTemp, IgnoreVolt, DeltaVolt);
           
-                cellspresent = bms.seriescells() + bms2.seriescells() - 1; //!! this is my dodgy cell
+                cellspresent = bms.seriescells() + bms2.seriescells();
                 if (client.connected()) client.publish("goatshed/status", "cellspresent SET " + cellspresent);
                 
                 error = "";
@@ -577,10 +581,11 @@ void loop() {
               if(batStats && !pauseTelnet) TelnetStream.println("BMS2");
               bms2.getAllVoltTemp(batStats && !pauseTelnet);  
               bVolts = bms2.getPackVoltage();
+              //bVolts = charger.voutput;
                 // assume they're the same voltage since in parallel!
               
               //TelnetStream.println(String(bVolts) + "v");
-              if(!pauseTelnet) TelnetStream.println("----           --               ------           Amps: " + String(bmAmps/1000) + " @ " + String(bVolts) + " v, Watts: " + String(bmAmps/1000*bVolts));
+              TelnetStream.println("----           --               ------           Amps: " + String(bmAmps/1000) + " @ " + String(bVolts) + " v, Watts: " + String(bmAmps/1000*bVolts));
           
            
               if (client.connected()) client.publish("battery/volt", String(bVolts));
@@ -598,7 +603,19 @@ void loop() {
   }
 
 
+  /*
+   * --- battery stats every 10 sec ---
+  *
+  *
+   */
 
+  static unsigned long next_battstats = millis()+40000; 
+  
+  if (millis() > next_battstats)
+  {
+      next_battstats = millis() + 10000;
+      if (client.connected()) client.publish("battery/cells", "{" + bms.getCellJson("A") + ", " + bms2.getCellJson("B") + "}");
+  }
 
   
 
@@ -636,6 +653,7 @@ void loop() {
       error = "module missing"; //was there but has not talked in 20s
       invertOverride = 0;
       chargeOverride = 0; //recovery from this is only via manual input, telnet or reboot
+      ESP.restart();
     }
     //bms.clearmodules(); // Not functional
     cleartime = millis();
@@ -657,7 +675,7 @@ void cls(){
       TelnetStream.print("[2J");
       TelnetStream.write(27);
       TelnetStream.print("[H"); 
-      TelnetStream.println("R eboot | r estart charging | d ebug | C harger CAN | B att CAN | c harger on | i inverter on | % recalc SOC | ! 100% SOC | p rint batt stats");
+      TelnetStream.println("R eboot | r estart charging | d ebug | C harger CAN | B att CAN | c harger on | i inverter on | % recalc SOC | ! 100% SOC | p rint batt stats | q uit");
 }
 
 
@@ -698,8 +716,7 @@ void updateSOC()
     SOC = 0; //reset SOC this way the can messages remain in range for other devices. Ampseconds will keep counting.
   }
 
-  if (!pauseTelnet)
-  {
+
     TelnetStream.print("------  ");
     TelnetStream.print(bmAmps);
     TelnetStream.print("mA");
@@ -708,7 +725,6 @@ void updateSOC()
     TelnetStream.print("% SOC ");
     TelnetStream.print(ampsecond * 0.27777777777778, 2);
     TelnetStream.println ("mAh");
-  }
 }
 
 
@@ -766,7 +782,7 @@ void currentlimit()
     {
       maxedChargecurrent = 0;
     }
-    if (getLowCellVolt() < UnderVSetpoint || getLowCellVolt() < DischVsetpoint)
+    if (getLowCellVolt() < UnderVSetpoint || getLowCellVolt() < DischVsetpoint) // 
     {
       maxedDiscurrent = 0;
     }
@@ -828,6 +844,10 @@ void currentlimit()
 
 void readTelnet(){
   switch (TelnetStream.read()) {
+    case 'q':
+      TelnetStream.println("bye bye");
+      TelnetStream.stop();
+      break;
     case 'R':
       TelnetStream.println("eboot!");
       TelnetStream.stop();
@@ -883,10 +903,8 @@ void readTelnet(){
       SOCcharged(1);
       break;
     case 'p': //print All batts
-      debug = 1;
-      batStats = 0;
-      pauseTelnet = 1;
       cls();
+      pauseTelnet = 1;
       //bms.printAllCSV(millis(), bmAmps, SOC);
       bms.printPackDetails(2);
       bms2.printPackDetails(2);
@@ -910,7 +928,7 @@ void setupOTA(){
     } else { // U_FS
       type = "filesystem";
     }
-
+    pauseTelnet = 1;
     // NOTE: if updating FS this would be the place to unmount FS using FS.end()
     TelnetStream.println("Start updating " + type);
   });

@@ -37,6 +37,7 @@ class BMSModuleManager
     float getHighCellVolt();
     float getHighVoltage();
     float getLowVoltage();
+    String getCellJson(String a);
     void setDebug(bool deb);
     void setCanDebug(bool deb);
     /*

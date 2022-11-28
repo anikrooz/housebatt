@@ -2,6 +2,7 @@
 #include "BMSModuleManager.h"
 #include <TelnetStream.h>
 #include <mcp_can.h>
+//#include <ArduinoJson.h>
 //#include "BMSUtil.h"
 
 
@@ -995,7 +996,9 @@ void IRAM_ATTR BMSModuleManager::decodecan(long unsigned int rxId, uint8_t rx[8]
           }
           modules[CMU].setExists(true);
           modules[CMU].setReset(true);
-          modules[CMU].decodecan(Id, rx);
+          //hack because my module 3s and 7 are screwy
+          //if(!(CMU == 3 && Id == 2)) 
+          modules[CMU].decodecan(Id, rx, CMU);
         }
       }
       else
@@ -1008,11 +1011,13 @@ void IRAM_ATTR BMSModuleManager::decodecan(long unsigned int rxId, uint8_t rx[8]
             TelnetStream.print(CMU);
             TelnetStream.print(",");
             TelnetStream.print(Id);
-            TelnetStream.print(" | ");
+            TelnetStream.print(" / ");
           }
           modules[CMU].setExists(true);
           modules[CMU].setReset(true);
-          modules[CMU].decodecan(Id, rx);
+          //hack because my module 3s and 7 are screwy
+          //if(!(CMU == 3 && Id == 2)) 
+          modules[CMU].decodecan(Id, rx, CMU);
         }
       }
     }
@@ -1407,4 +1412,27 @@ void BMSModuleManager::printAllCSV(unsigned long timestamp, float current, int S
       TelnetStream.println();
     }
   }
+}
+
+String BMSModuleManager::getCellJson(String a){
+  //ArduinoJson is available. But this was, weirdly, easier!
+  String cellsOut = "";
+  bool firstMod = true;
+  
+  for (int y = 1; y < 63; y++)
+  {
+    if (modules[y].isExisting())
+    {
+      if(!firstMod) cellsOut += ", ";
+      firstMod = false;
+      cellsOut += "\"" + a + String(y) + "\":{\"cells\":[";
+      for (int i = 0; i < 12; i++)
+      {
+        if(i>0) cellsOut += ", ";
+        cellsOut += String(modules[y].getCellVoltage(i));
+      }
+      cellsOut += "]}";
+    }
+  }
+  return cellsOut;
 }
