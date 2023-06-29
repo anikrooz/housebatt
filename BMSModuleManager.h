@@ -10,11 +10,11 @@ class BMSModuleManager
   public:
     BMSModuleManager(int);
     bool initCan(int INTr);
-    void checkCan();
+    void checkCan(int whichCan);
     int seriescells();
     void clearmodules();
-    void decodecan(long unsigned int id, uint8_t rx[8], int debug);
-    void decodetemp(long unsigned int id, uint8_t rx[8], int debug, int type);
+    void decodecan(long unsigned int id, uint8_t rx[8], int debug, int whichCan);
+    void decodetemp(long unsigned int id, uint8_t rx[8], int debug, int type, int whichCan);
     void getAllVoltTemp(bool debug);
     void readSetpoints();
     void setBatteryID(int id);
@@ -28,6 +28,7 @@ class BMSModuleManager
     void balanceCells(int debug);
     void sendCommand();
     void sendbalancingtest();
+    void setBalancing(bool);
     float getPackVoltage();
     float getAvgTemperature();
     float getHighTemperature();

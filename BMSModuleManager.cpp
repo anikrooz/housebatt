@@ -29,7 +29,7 @@ BMSModuleManager::BMSModuleManager(int CS)
 bool BMSModuleManager::initCan(int INTr){
   
   CAN1_INT = INTr;
-  if (CAN1->begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) == CAN_OK){
+  if (CAN1->begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK){
     Serial.println("Batt MCP2515 Initialized Successfully!");
     CAN1->setMode(MCP_NORMAL);                     // Set operation mode to normal so the MCP2515 sends acks to received data.
     return 1;
@@ -43,34 +43,33 @@ bool BMSModuleManager::initCan(int INTr){
   
 }
 
-void BMSModuleManager::checkCan(){
+void BMSModuleManager::checkCan(int whichCan){
     
    // if(!digitalRead(CAN1_INT)) { //to use interrupts, experimnent with this!
    while(CAN1->checkReceive() == 3) {
-
       
       CAN1->readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
-      yield();
+
       //ESP.wdtFeed();
       if (rxId < 0x300)//do VW BMS magic if ids are ones identified to be modules
       {
-          decodecan(rxId, rxBuf, candebug); //do VW BMS if ids are ones identified to be modules
+          decodecan(rxId, rxBuf, candebug, whichCan); //do VW BMS if ids are ones identified to be modules
       }
       if ((rxId & 0x1FFFFFFF) < 0x1A555440 && (rxId & 0x1FFFFFFF) > 0x1A555400)   // Determine if ID is Temperature CAN-ID
       {
-          decodetemp(rxId, rxBuf, candebug, 1);
+          decodetemp(rxId, rxBuf, candebug, 1, whichCan);
       }
       if ((rxId & 0x1FFFFFFF) < 0x1A5555FF && (rxId & 0x1FFFFFFF) > 0x1A5555EF)   // Determine if ID is Temperature CAN-ID FOR MEB
       {
-          decodetemp(rxId, rxBuf, candebug, 2);
+          decodetemp(rxId, rxBuf, candebug, 2, whichCan);
       }
       
-      if(candebug){
+      if(false && candebug){
             char msgString[128];
             if ((rxId & 0x80000000) == 0x80000000) // Determine if ID is standard (11 bits) or extended (29 bits)
-                sprintf(msgString, "******** %.8lX:", (rxId & 0x1FFFFFFF));
+                sprintf(msgString, "%1d******** %.8lX:", whichCan, (rxId & 0x1FFFFFFF));
             else
-                sprintf(msgString, "******** %.3lX,false,0,%1d", rxId, len);
+                sprintf(msgString, "%1d******** %.3lX,false,0,%1d", whichCan, rxId, len);
     
             TelnetStream.print(msgString);
     
@@ -89,7 +88,6 @@ void BMSModuleManager::checkCan(){
             }
             TelnetStream.println();
       }
-      yield();
     }
 }
 
@@ -323,17 +321,22 @@ void BMSModuleManager::setBalanceHyst(float newVal)
   TelnetStream.println(BalHys, 3);
 }
 
+void BMSModuleManager::setBalancing(bool bal){
+  if(!bal) balancing = false;
+}
+
 void BMSModuleManager::balanceCells(int debug)
 {
   uint16_t balance = 0;//bit 0 - 5 are to activate cell balancing 1-6
-  //TelnetStream.println();
+  char msgString[128];
+  if(debug) TelnetStream.println(balcnt);
   // TelnetStream.println(LowCellVolt + BalHys, 3);
-    if (balcnt > 60)
+  if (balcnt > 60)
   {
     balcnt = 0;
   }
   
-    if (balcnt > 10)
+  if (balcnt > 10)
   {
     if (balcnt == 11 || balcnt == 15 || balcnt == 20 || balcnt == 25 || balcnt == 30 || balcnt == 35 || balcnt == 40 || balcnt == 45 || balcnt == 50 || balcnt == 55)
     {
@@ -349,13 +352,13 @@ void BMSModuleManager::balanceCells(int debug)
             {
               balance = balance | (1 << i);
             }
-            /*
-              else
+            
+            else if(debug)
               {
-              Serial.print(" | ");
-              Serial.print(i);
-              }
-            */
+              TelnetStream.print(" | ");
+              TelnetStream.print(i);
+            }
+            
           }
           if (balance > 0)
           {
@@ -363,12 +366,8 @@ void BMSModuleManager::balanceCells(int debug)
           }
           if (debug == 1)
           {
-            TelnetStream.println();
-            TelnetStream.print("Module ");
-            TelnetStream.print(y);
-            TelnetStream.print(" | ");
+            TelnetStream.print(" -- > Module " + String(y) + " | ");
             TelnetStream.println(balance, HEX);
-
           }
 
           tx[0] = 0X00;
@@ -401,7 +400,7 @@ void BMSModuleManager::balanceCells(int debug)
               txId  = 0x1A55540C;
               break;
             case (3):
-              txId  = 0x1A55540E;
+              txId  = 0x1A55541E;
               break;
             case (4):
               txId  = 0x1A555410;
@@ -465,7 +464,7 @@ void BMSModuleManager::balanceCells(int debug)
               txId  = 0x1A55540D;
               break;
             case (3):
-              txId  = 0x1A55540F;
+              txId  = 0x1A55541F;
               break;
             case (4):
               txId  = 0x1A555411;
@@ -534,7 +533,7 @@ void BMSModuleManager::balanceCells(int debug)
       CAN1->sendMsgBuf(txId, ext, len, tx);
       delay(1);
 
-      txId  = 0x1A55540E;
+      txId  = 0x1A55541E;
       CAN1->sendMsgBuf(txId, ext, len, tx);
       delay(1);
 
@@ -592,7 +591,7 @@ void BMSModuleManager::balanceCells(int debug)
       CAN1->sendMsgBuf(txId, ext, len, tx);
       delay(1);
 
-      txId  = 0x1A55540F;
+      txId  = 0x1A55541F;
       CAN1->sendMsgBuf(txId, ext, len, tx);
       delay(1);
 
@@ -636,6 +635,10 @@ void BMSModuleManager::balanceCells(int debug)
     }
   }
   balcnt++;
+  if(debug){
+    TelnetStream.print("Bal:");
+    TelnetStream.print(balancing);
+  }
   ext = 0;
 }
 
@@ -675,7 +678,7 @@ void BMSModuleManager::clearmodules()
   }
 }
 
-void IRAM_ATTR BMSModuleManager::decodetemp(long unsigned int id, uint8_t rx[8], int debug, int type)
+void IRAM_ATTR BMSModuleManager::decodetemp(long unsigned int id, uint8_t rx[8], int debug, int type, int whichCan)
 {
   int CMU = 0;
   if (type == 1)
@@ -693,9 +696,7 @@ void IRAM_ATTR BMSModuleManager::decodetemp(long unsigned int id, uint8_t rx[8],
       modules[CMU].decodetemp(rx, 1);
       if (debug == 1)
       {
-        Serial.println();
-        Serial.print(CMU);
-        Serial.print(" | Temp Found");
+        TelnetStream.println(String(whichCan) + " Mod "+CMU+" Temp Found");
       }
     }
   }
@@ -712,16 +713,14 @@ void IRAM_ATTR BMSModuleManager::decodetemp(long unsigned int id, uint8_t rx[8],
         modules[CMU].decodetemp(rx, 2);
         if (debug == 1)
         {
-          Serial.println();
-          Serial.print(CMU);
-          Serial.print("|  Temp Found");
+          TelnetStream.println(String(whichCan) + " Mod "+CMU+" Temp2 Found");
         }
       }
     }
   }
 }
 
-void IRAM_ATTR BMSModuleManager::decodecan(long unsigned int rxId, uint8_t rx[8], int debug)
+void IRAM_ATTR BMSModuleManager::decodecan(long unsigned int rxId, uint8_t rx[8], int debug, int whichCan)
 {
   int CMU, Id = 0;
   if (balancing == false)
@@ -988,16 +987,10 @@ void IRAM_ATTR BMSModuleManager::decodecan(long unsigned int rxId, uint8_t rx[8]
         {
           if (debug == 1)
           {
-            TelnetStream.println();
-            TelnetStream.print(CMU);
-            TelnetStream.print(",");
-            TelnetStream.print(Id);
-            TelnetStream.print(" | ");
+            TelnetStream.println(String(whichCan) + " Module "+CMU+","+Id+" v");
           }
           modules[CMU].setExists(true);
           modules[CMU].setReset(true);
-          //hack because my module 3s and 7 are screwy
-          //if(!(CMU == 3 && Id == 2)) 
           modules[CMU].decodecan(Id, rx, CMU);
         }
       }
@@ -1007,16 +1000,10 @@ void IRAM_ATTR BMSModuleManager::decodecan(long unsigned int rxId, uint8_t rx[8]
         {
           if (debug == 1)
           {
-            TelnetStream.println();
-            TelnetStream.print(CMU);
-            TelnetStream.print(",");
-            TelnetStream.print(Id);
-            TelnetStream.print(" / ");
+            TelnetStream.println(String(whichCan) + " Module "+CMU+","+Id+" v");
           }
           modules[CMU].setExists(true);
-          modules[CMU].setReset(true);
-          //hack because my module 3s and 7 are screwy
-          //if(!(CMU == 3 && Id == 2)) 
+          modules[CMU].setReset(true); 
           modules[CMU].decodecan(Id, rx, CMU);
         }
       }
@@ -1082,7 +1069,7 @@ float BMSModuleManager::getHighCellVolt()
   for (int x = 1; x <= MAX_MODULE_ADDR; x++)
   {
     if (modules[x].isExisting())
-    {
+    { 
       if (modules[x].getHighCellV() >  HighCellVolt)  HighCellVolt = modules[x].getHighCellV();
     }
   }

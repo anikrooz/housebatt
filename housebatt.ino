@@ -27,7 +27,7 @@ Adafruit_ADS1115 ads;
 
 // ------  Hardware dependent stuff ....
 
-#define CAN0_CS 5 //ChipSelect for CAN0 MCP2515
+#define CAN0_CS 13 //ChipSelect for CAN0 MCP2515 CHARGER
 #define CAN0_INT 0 //I'm not using interrupts so follow this through and edit the module to use it.
 
 VertivPSU charger(CAN0_CS);
@@ -37,7 +37,7 @@ VertivPSU charger(CAN0_CS);
 #define CAN1_INT 0 //I'm not using interrupts so follow this through and edit the module to use it.
 #define CAN2_INT 0
 #define CAN1_CS 4    //ChipSelect for CAN1 MCP2515                    
-#define CAN2_CS 13   //ChipSelect for CAN2 MCP2515
+#define CAN2_CS 5   //ChipSelect for CAN2 MCP2515
 BMSModuleManager bms(CAN1_CS);
 BMSModuleManager bms2(CAN2_CS);
 
@@ -55,26 +55,26 @@ const char *targetTopic = "meterbox/chargeTarget";  // target power (W) to charg
 const int mqtt_port = 1883;
 
 
-const int chainedInverters = 2; // < --  most likely start with 1 here
-const int maxOutput = 1000 * chainedInverters; //edit this to limit TOTAL power output in watts (not individual unit output)
+const int chainedInverters = 1; // < --  most likely start with 1 here
+const int maxOutput = 1300 * chainedInverters; //edit this to limit TOTAL power output in watts (not individual unit output)
 const int importbuffer = 20;
 const int maxChargerpower = -2800; //max charging power, limited by temp, cell imbalance, etc
-const int minChargerpower = -150; //stop charging less than this
-const int startChargerPower = -300; //don't turn on charger less than this
+const int minChargerpower = -120; //stop charging less than this
+const int startChargerPower = -270; //don't turn on charger less than this
 const int minOutput = 50; //no inverter less than this
 const int chargerIdleACoff = 600000; //10 mins //Not used
 
 const int chargecurrentmax = 500; //max charge current in 0.1A
 const int chargecurrentend = 50; //end charge current in 0.1A
-const int chargecurrentcold = 50;
+const int chargecurrentcold = 50; //5A at -10deg ? Nope zero is our limit
 int timeout = 15000;
 int chargerRamptime = 8500; //don't alter demand for this time, let charger ramp up
 
 // Configure these for your battery size
 const int Pstrings = 9; //// TOTAL strings in parallel used to divide voltage of pack
 const int Scells = 12;//Cells in series
-const int bms1Pstrings = 3; //cells in parallel on this CAN bus
-const int bms2Pstrings = 6;
+const int bms1Pstrings = 3; //cells in parallel on this CAN bus //3
+const int bms2Pstrings = 6; //6
 
 const int CAP = 22.5; //25; //battery size in Ah
 
@@ -82,18 +82,19 @@ const int CAP = 22.5; //25; //battery size in Ah
 
 const float OverVSetpoint = 4.2;
 const float  UnderVSetpoint = 2.8; //really doesn't do much. See DischVsetpoint
-const float ChargeVsetpoint = 4.1;
-const float ChargeHys = 0.1; // voltage drop required for charger to kick back on
+const float ChargeVsetpoint = 4.06;
+const float ChargeTaper = 0.2; //taper to chargecurrentend over this v
+const float ChargeHys = 0.2; // voltage drop required for charger to kick back on
 const float  CellGap = 0.2; //max delta between high and low cell
 const float  OverTSetpoint = 65.0;
-const float  UnderTSetpoint = -10.0;
-const float  ChargeTSetpoint = 0.0;
+const float  UnderTSetpoint = 2.0;
+const float  ChargeTSetpoint = 5.5;
 const float  DisTSetpoint = 40.0;
 const float WarnToff = 5.0; //temp offset before raising warning
-const float IgnoreTemp = 0; // 0 - use both sensors, 1 or 2 only use that sensor
+const float IgnoreTemp = 1; // 0 - use both sensors, 1 or 2 only use that sensor
 const float IgnoreVolt = 0.5; //cells below this are IGNORED
 const float balanceVoltage = 3.9;
-const float balanceHyst = 0.04;
+const float balanceHyst = 0.03;
 const float DeltaVolt = 0.5; //V of allowable difference between measurements
 
 int socvolt[4] = {3100, 10, 4100, 90}; 
@@ -101,9 +102,9 @@ int socvolt[4] = {3100, 10, 4100, 90};
 socvolt[1] = 10; //Voltage and SOC curve for voltage based SOC calc
 socvolt[2] = 4100; //Voltage and SOC curve for voltage based SOC calc
 socvolt[3] = 90; //Voltage and SOC curve for voltage based SOC calc*/
-const int discurrentmax = 300; // max discharge current in 0.1A
+const int discurrentmax = 500; // max discharge current in 0.1A
 const float DisTaper = 0.3; //V offset to bring in discharge taper to Zero Amps at settings.DischVsetpoint
-const float DischVsetpoint = 3.1; //no discharge under this
+const float DischVsetpoint = 3.2; //no discharge under this
 
 
 
@@ -125,6 +126,7 @@ bool debug = 0; //turn off with d
 bool batStats = 1; // b
 bool pauseTelnet = 0;
 bool targetMode = 0; //set when non-zero targetTopic received. Times out
+bool forceBalance = 0;
 
 
 //Curent filter - not used//
@@ -210,8 +212,11 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopi
         //importingnow = importingnow-importbuffer; //target grid demand minus buffer
       //demand = bVolts * bmAmps/1000 * (bmAmps < 0 ? 1.04 : 0.9); //actual currently going to (-) / from (+) battery (+ 5% for mains)
       if(bmAmps == 0) demand = 0; //don't care what we asked it last time; we got nothing!
-      if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                             Batt right now: " + (String)demand);
-      demand = demand + importingnow; //add grid import to current demand, expects that grid import will be negative if exporting
+      if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                                Last Demand: " + (String)demand);
+      if(demand > 0) importingnow -= importbuffer;
+      if(demand < 0) importingnow += importbuffer;
+      demand = demand + (importingnow * 0.85); //add grid import to current demand, expects that grid import will be negative if exporting
+          //                            ^^ smothing
 
   }else if((String)topic == (String)targetTopic){
       if(String(payload).toInt() > 0){
@@ -221,6 +226,7 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopi
           demand = 0 - String(payload).toInt();
       }else{
           targetMode = 0;
+          invertOverride = 1; //way to control inverter
       }
       
   }else{
@@ -228,7 +234,7 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopi
     return;
   }
   
-  if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                                     Demand: " + (String)demand);
+  if(!chCANdebug && !batCANdebug && !pauseTelnet) TelnetStream.println("-->                                     Wanted: " + (String)demand);
   
     //limit demand between maxs
   if (demand >= maxOutput) demand = maxOutput;
@@ -252,12 +258,12 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopi
         lastChargeTime = millis();
         //charger.setCPerc(0);
       }else{
-        demand -= importbuffer;
+        //demand -= importbuffer;
         if(maxedDiscurrent * bVolts < demand) demand = maxedDiscurrent * bVolts;
         serialpacket[4] =  (demand / chainedInverters) >> 8;
         serialpacket[5] = (demand / chainedInverters) >> 0;
         serialpacket[7] = 264 - serialpacket[4] - serialpacket[5];
-        demand += importbuffer;
+        //demand += importbuffer;
         Serial.write(serialpacket,8);
         Serial.flush();
         inverting = 1;
@@ -273,8 +279,11 @@ void IRAM_ATTR mqttCallback(const MqttClient* /* source */, const Topic& inpTopi
           inverting = 0;
           demand = 0;
         }else{
-          cAmps = ((0-demand)-importbuffer)/charger.voutput;
-          if(cAmps > maxedChargecurrent*0.1) cAmps = maxedChargecurrent*0.1;
+          cAmps = (0-demand)/bVolts;
+          if(cAmps > maxedChargecurrent*0.1) {
+            cAmps = maxedChargecurrent*0.1;
+            TelnetStream.println("-->                       LIMIT charge current:  " + String(maxedChargecurrent*0.1));
+          }                                                                       //
           inverting = 0;
           if(!charging && demand < startChargerPower) {
             lastChargeTime = millis();
@@ -352,6 +361,8 @@ void setup() {
     delay(5000);
     //ESP.restart();
   }
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
 
   
   TelnetStream.begin();
@@ -429,13 +440,15 @@ void loop() {
   client.loop();
   charger.tick();
   ArduinoOTA.handle();
-  bms.checkCan();
+  bms.checkCan(1);
+  bms2.checkCan(2);
   yield();
-  bms2.checkCan();
-  
-  canInvert = bms.getPackVoltage() > 36 && getLowCellVolt() > UnderVSetpoint && invertOverride; //this is a hard limit at UnderVSetpoint. currentlimit() should taper to zero at dischVsetpoint
 
-  if(charging && getHighCellVolt() > ChargeVsetpoint) {
+
+  canInvert = bms.getPackVoltage() > 36 && getLowCellVolt() > UnderVSetpoint && invertOverride; //this is a hard limit at UnderVSetpoint. currentlimit() should taper to zero at dischVsetpoint
+    
+    
+  if(charging && getHighCellVolt() > ChargeVsetpoint) { //over 4.1
     TelnetStream.println("                  ----------- STOP CHARGING, fully charged ------------");
     if (client.connected()) client.publish("goatshed/status", "STOP CHARGING, fully charged");
     charger.switchACpower(0);
@@ -446,39 +459,49 @@ void loop() {
       else
          SOCcharged(1); //95
   }
-
-
+  
   //reset fullyCharged at -0.2v
   if(fullyCharged && (bms.getPackVoltage() < 49.2) && (getHighCellVolt() < ChargeVsetpoint - ChargeHys)) fullyCharged = 0;
   
   canCharge = chargeOverride && !fullyCharged && charger.isConnected();
 
 
-  // ---- Current measurement ev 250ms -----
+
+  // ---- Checks and Current measurement ev 250ms -----
   static unsigned long next_measure = millis()+4000;
   if(!twiOk) twiOk = ads.begin();
   if(twiOk && millis() > next_measure){
     next_measure = millis() + 250;
+
     
+
+    // --- Current measurement ----
+      
     int16_t results = ((float)ads.readADC_Differential_0_1()) * 256 / 32.768 * 1.3333; //+ve is OUT of batt
+    // MAX 30A!
     //if(millis() > 1500 && millis() < 5000 && bmAmps > 1000) flipCurrent = 1; // no other way we can be using in that time
     
     bmAmps = results * (flipCurrent ? 1 : -1); //((float)results * 256.0) / 32768 * 1.3333;//75mv->100A shunt
     if(bmAmps < 35 && bmAmps > -35) bmAmps = 0; //filter out zero jitter
+    if(charging && charger.getmAmps() > 30000) bmAmps = 0 - charger.getmAmps();
     
-    if((charging && bmAmps > 0) || (!charging && inverting && bmAmps < 0)){
+    /*if((charging && bmAmps > 0) || (!charging && inverting && bmAmps < 0)){
       flipCurrent = !flipCurrent;
       bmAmps = bmAmps * -1;
-    }
+    }*/
     
     //lowpassFilter.input(results);
     //bmAmps = lowpassFilter.output();
-    if(SOCset) ampsecond = ampsecond - ((bmAmps * (millis() - lasttime) / 1000) / 1000);
+    if(SOCset) {
+      ampsecond = std::max(ampsecond - ((bmAmps * (millis() - lasttime) / 1000) / 1000), 0.0f);
+    }
     lasttime = millis();
 
   }
   
-
+  bms.checkCan(1);
+  bms2.checkCan(2);
+  yield();
 
   /*
    * --- stuff do do every 1/2 sec ---
@@ -500,34 +523,41 @@ void loop() {
       if (client.connected() && SOCset) client.publish("battery/amphour", String(ampsecond/3600));
       if (client.connected()) client.publish("battery/error", error);
     
-    
-    
+      updateSOC();
+      currentlimit();
+      bms.sendCommand();
+      bms2.sendCommand();
+      bms.checkCan(1);
+      bms2.checkCan(2);
+      yield();
+      bms.checkCan(1);
+      bms2.checkCan(2);
+      
    
-    //if(!charging && millis() - lastChargeTime > chargerIdleACoff) charger.switchACpower(0);
-
-    //      balancing
-    
-    if(SOCset && getHighCellVolt() > balanceVoltage && getHighCellVolt() > getLowCellVolt() + balanceHyst) {
-        if(!pauseTelnet) TelnetStream.println("Balancing");
-        balancing = 1;
-        //bms.balanceCells(0);    //1 is debug
-        //bms2.balanceCells(0);
-    }else{
-        balancing = 0;
-    }
-
-    updateSOC();
-    currentlimit();
-    bms.sendCommand();
-    bms2.sendCommand();
+      //if(!charging && millis() - lastChargeTime > chargerIdleACoff) charger.switchACpower(0);
+  
+      //      balancing
+      if(SOCset && charging && ((getHighCellVolt() > balanceVoltage && getHighCellVolt() > getLowCellVolt() + balanceHyst) || forceBalance)) {
+          if(!pauseTelnet) TelnetStream.println("Balancing");
+          balancing = 1;
+          bms.balanceCells(batCANdebug);
+          yield();
+          bms2.balanceCells(batCANdebug);    //1 is debug
+          
+      }else{
+          balancing = 0;
+          bms.setBalancing(false);
+          bms2.setBalancing(false);
+      }
 
 
-    if(charger.isConnected()){      // don't do anything that could destabilise before charger is under control
+
+
+      if(charger.isConnected()){      // don't do anything that could destabilise before charger is under control
               //  checks
              
-              bms.sendbalancingtest();
+  
               bms.getAvgCellVolt(); //needed to set scells
-              bms2.sendbalancingtest();
               bms2.getAvgCellVolt(); //needed to set scells
              
 
@@ -570,7 +600,7 @@ void loop() {
                     error = "";
                   }
                 }
-              }else{
+              }else{ //still finding cells
                 if (client.connected()) client.publish("goatshed/status", "Series Cells: " + String(bms.seriescells())) + " + " + String(bms2.seriescells());
                 TelnetStream.print("Cells found: " + String(bms.seriescells()));
                 TelnetStream.println(" + " + String(bms2.seriescells()));
@@ -586,20 +616,24 @@ void loop() {
               
               //TelnetStream.println(String(bVolts) + "v");
               TelnetStream.println("----           --               ------           Amps: " + String(bmAmps/1000) + " @ " + String(bVolts) + " v, Watts: " + String(bmAmps/1000*bVolts));
-          
+              TelnetStream.print("Lowtemp: ");
+              TelnetStream.println(String(getLowTemperature()));
+
+              bms.checkCan(1);
+              bms2.checkCan(2);          
            
               if (client.connected()) client.publish("battery/volt", String(bVolts));
+              if (client.connected()) client.publish("battery/balancing", String(balancing));
               if (client.connected()) client.publish("battery/highcell", String(getHighCellVolt()));
               if (client.connected()) client.publish("battery/lowcell", String(getLowCellVolt()));
-              if (client.connected()) client.publish("battery/balancing", String(balancing));
-              if (client.connected() && SOCset) client.publish("battery/temp", String(bms.getAvgTemperature()));
+              if (client.connected() && SOCset) client.publish("battery/temp", String(bms2.getAvgTemperature()));
         
               TelnetStream.flush();
 
-        }else if(millis() > 60000){
+      }else if(millis() > 60000){
           //not connected (or disconnected) after 1 min, BAD.
           ESP.restart();
-        }
+      }
   }
 
 
@@ -615,6 +649,7 @@ void loop() {
   {
       next_battstats = millis() + 10000;
       if (client.connected()) client.publish("battery/cells", "{" + bms.getCellJson("A") + ", " + bms2.getCellJson("B") + "}");
+      
   }
 
   
@@ -653,7 +688,7 @@ void loop() {
       error = "module missing"; //was there but has not talked in 20s
       invertOverride = 0;
       chargeOverride = 0; //recovery from this is only via manual input, telnet or reboot
-      ESP.restart();
+      //ESP.restart();
     }
     //bms.clearmodules(); // Not functional
     cleartime = millis();
@@ -675,7 +710,7 @@ void cls(){
       TelnetStream.print("[2J");
       TelnetStream.write(27);
       TelnetStream.print("[H"); 
-      TelnetStream.println("R eboot | r estart charging | d ebug | C harger CAN | B att CAN | c harger on | i inverter on | % recalc SOC | ! 100% SOC | p rint batt stats | q uit");
+      TelnetStream.println("R eboot | r estart chg | d ebug | B/C CAN dbg | l forceBal | c harger on | i inverter on | % recalc SOC | ! 100% SOC | b att stats | q uit");
 }
 
 
@@ -703,13 +738,13 @@ void updateSOC()
 
   int lastSOC = SOC;
   SOC = ((ampsecond * 0.27777777777778) / (CAP * Pstrings * 1000)) * 100;
-  if(lastSOC != SOC) prefs.putInt("SOC", SOC);
-  if (SOC >= 100)
+  if (SOC > 100)
   {
     ampsecond = (CAP * Pstrings * 1000) / 0.27777777777778 ; //reset to full
-    SOC = 100;
+    SOC = 99; //only get to 100 when actually fullycharged
   }
-
+  if(lastSOC != SOC) prefs.putInt("SOC", SOC);
+  
 
   if (SOC < 0)
   {
@@ -766,8 +801,8 @@ void currentlimit()
     ///////All hard limits to into zeros
     if (getLowTemperature() < UnderTSetpoint)
     {
-      //discurrent = 0; Request Daniel
-      maxedChargecurrent = chargecurrentcold;
+      maxedDiscurrent = 0;
+      maxedChargecurrent = 0;
     }
     if (getHighTemperature() > OverTSetpoint)
     {
@@ -810,20 +845,21 @@ void currentlimit()
     if (maxedChargecurrent > chargecurrentcold) // >5A
     {
       //Temperature based///
-      if (getLowTemperature() < ChargeTSetpoint) //0
+      if (getLowTemperature() < ChargeTSetpoint) //5
       {
         maxedChargecurrent = maxedChargecurrent - map(getLowTemperature(), UnderTSetpoint, ChargeTSetpoint, (chargecurrentmax - chargecurrentcold), 0);
+        TelnetStream.println("COLD  ");
       }
       //Voltagee based///
 
-      if (getHighCellVolt() > (ChargeVsetpoint - ChargeHys)) // 4.1 - 0.2
+      if (getHighCellVolt() > (ChargeVsetpoint - ChargeTaper)) // 4.1 - 0.2
       {
         //TelnetStream.println(" maxedChargeCurrent ==== " + String(maxedChargecurrent));
        // TelnetStream.println(" getHighCellVolt ==== " + String(bms.getHighCellVolt()));
         //TelnetStream.println(" chargecurrentmax ==== " + String(chargecurrentmax));
-       
+       TelnetStream.println("HIGH TAPER  "+String(getHighCellVolt()));
         //TelnetStream.println(" :::: Minus :::: " + String(map(bms.getHighCellVolt(), (ChargeVsetpoint - ChargeHys), ChargeVsetpoint, 0, (chargecurrentmax - chargecurrentend))));
-        maxedChargecurrent = maxedChargecurrent - (((getHighCellVolt() - (ChargeVsetpoint - ChargeHys)) / ChargeHys) * (chargecurrentmax - chargecurrentend));
+        maxedChargecurrent = maxedChargecurrent - (((getHighCellVolt() - (ChargeVsetpoint - ChargeTaper)) / ChargeTaper) * (chargecurrentmax - chargecurrentend));
         //maxedChargecurrent = maxedChargecurrent - map(bms.getHighCellVolt(), (ChargeVsetpoint - ChargeHys), ChargeVsetpoint, 0, (chargecurrentmax - chargecurrentend));
         //TelnetStream.println(" maxedChargeCurrent ==== " + String(maxedChargecurrent));
       }
@@ -877,6 +913,12 @@ void readTelnet(){
       batStats = !batStats;
       TelnetStream.println("attery stats ------- > "+ String(batStats));
       break;    
+    case 'l':
+      forceBalance = !forceBalance;
+      TelnetStream.println(" forceBalance ------- > "+ String(forceBalance));
+      bms.setBalanceHyst(forceBalance ? 0.005 : balanceHyst);
+      bms2.setBalanceHyst(forceBalance ? 0.005 : balanceHyst);
+      break; 
     case 'B':
       batCANdebug = !batCANdebug;
       TelnetStream.println("attery CAN debug ------- > "+ String(batCANdebug));
@@ -967,11 +1009,16 @@ void setupOTA(){
  *  
  */
 float getHighCellVolt(){
-  return std::max(bms.getHighCellVolt(), bms2.getHighCellVolt());
+  float a= bms.getHighCellVolt();
+  float b= bms2.getHighCellVolt();
+  //TelnetStream.println("getHighCellVolt :::::::::::::: bms1: " + String(a) + " ::::::::::::: bms2: " + String(b));
+  return std::max(a,b);
 }
 
 float getLowCellVolt(){
-  return std::min(bms.getLowCellVolt(), bms2.getLowCellVolt());
+  float a= bms.getLowCellVolt();
+  float b= bms2.getLowCellVolt();
+  return std::min(a,b);
 }
 
 float getAvgCellVolt(){
@@ -979,9 +1026,13 @@ float getAvgCellVolt(){
 }
 
 float getHighTemperature(){
+  bms.getAvgTemperature();
+  bms2.getAvgTemperature();
   return std::max(bms.getHighTemperature(), bms2.getHighTemperature());
 }
 
 float getLowTemperature(){
+  bms.getAvgTemperature();
+  bms2.getAvgTemperature();
   return std::min(bms.getLowTemperature(), bms2.getLowTemperature());
 }
